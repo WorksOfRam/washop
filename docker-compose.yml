@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: washop-db
+    environment:
+      POSTGRES_DB: washop
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: washop-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API (for production builds)
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: washop-api
+  #   environment:
+  #     DB_HOST: postgres
+  #     DB_PORT: 5432
+  #     DB_NAME: washop
+  #     DB_USER: postgres
+  #     DB_PASSWORD: postgres
+  #     REDIS_HOST: redis
+  #     REDIS_PORT: 6379
+  #     JWT_SECRET: your-production-secret
+  #   ports:
+  #     - "8080:8080"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+  # pgAdmin (Database Management UI)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: washop-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@washop.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: washop-network

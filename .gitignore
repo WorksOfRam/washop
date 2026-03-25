@@ -1,0 +1,45 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# Flutter
+flutter_app/.dart_tool/
+flutter_app/.packages
+flutter_app/.pub-cache/
+flutter_app/.pub/
+flutter_app/build/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test
+coverage/
+
+# Database
+*.db
+*.sqlite
+
+# Secrets
+*.pem
+*.key
+credentials.json

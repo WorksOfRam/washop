@@ -57,16 +57,19 @@ router.post('/msg91', async (req, res) => {
   try {
     console.log('MSG91 Webhook:', JSON.stringify(req.body));
     
-    const { mobile, message, type, name } = req.body;
+    // MSG91 payload format: { customerNumber, message, messageId, timestamp }
+    const { customerNumber, message } = req.body;
     
-    if (mobile && message && type === 'text') {
+    if (customerNumber && message) {
       // Remove country code if present (91XXXXXXXXXX -> XXXXXXXXXX)
-      const phone = mobile.replace(/^91/, '');
-      const response = await handleMessage(phone, message);
+      const phone = customerNumber.replace(/^91/, '');
+      const botResponse = await handleMessage(phone, message);
       
       // Send reply via MSG91
-      if (process.env.MSG91_AUTH_KEY && process.env.MSG91_TEMPLATE_ID) {
-        await sendMsg91Reply(mobile, response);
+      if (process.env.MSG91_AUTH_KEY) {
+        await sendMsg91Reply(customerNumber, botResponse);
+      } else {
+        console.log('MSG91 Reply (no auth key):', botResponse);
       }
     }
     
@@ -80,23 +83,33 @@ router.post('/msg91', async (req, res) => {
 // Send message via MSG91
 async function sendMsg91Reply(to, message) {
   try {
-    const response = await fetch('https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/', {
+    // Ensure number has country code
+    const toNumber = to.startsWith('91') ? to : `91${to}`;
+    
+    const response = await fetch('https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'authkey': process.env.MSG91_AUTH_KEY
       },
       body: JSON.stringify({
-        integrated_number: process.env.MSG91_PHONE_NUMBER,
+        integrated_number: process.env.MSG91_INTEGRATED_NUMBER,
         content_type: 'text',
         payload: {
-          to: to,
+          messaging_product: 'whatsapp',
           type: 'text',
-          text: { body: message }
-        }
+          text: {
+            body: message
+          }
+        },
+        recipients: [
+          { mobiles: toNumber }
+        ]
       })
     });
-    console.log('MSG91 Reply sent:', response.status);
+    
+    const result = await response.text();
+    console.log('MSG91 Reply sent:', response.status, result);
   } catch (err) {
     console.error('MSG91 Send error:', err);
   }

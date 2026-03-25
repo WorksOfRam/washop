@@ -52,6 +52,56 @@ router.post('/test', async (req, res) => {
   }
 });
 
+// MSG91 WhatsApp Webhook
+router.post('/msg91', async (req, res) => {
+  try {
+    console.log('MSG91 Webhook:', JSON.stringify(req.body));
+    
+    const { mobile, message, type, name } = req.body;
+    
+    if (mobile && message && type === 'text') {
+      // Remove country code if present (91XXXXXXXXXX -> XXXXXXXXXX)
+      const phone = mobile.replace(/^91/, '');
+      const response = await handleMessage(phone, message);
+      
+      // Send reply via MSG91
+      if (process.env.MSG91_AUTH_KEY && process.env.MSG91_TEMPLATE_ID) {
+        await sendMsg91Reply(mobile, response);
+      }
+    }
+    
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('MSG91 Webhook error:', err);
+    res.status(200).json({ success: true });
+  }
+});
+
+// Send message via MSG91
+async function sendMsg91Reply(to, message) {
+  try {
+    const response = await fetch('https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'authkey': process.env.MSG91_AUTH_KEY
+      },
+      body: JSON.stringify({
+        integrated_number: process.env.MSG91_PHONE_NUMBER,
+        content_type: 'text',
+        payload: {
+          to: to,
+          type: 'text',
+          text: { body: message }
+        }
+      })
+    });
+    console.log('MSG91 Reply sent:', response.status);
+  } catch (err) {
+    console.error('MSG91 Send error:', err);
+  }
+}
+
 async function handleMessage(from, text) {
   const command = parseCommand(text);
   let response;

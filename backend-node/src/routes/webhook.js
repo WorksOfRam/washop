@@ -80,13 +80,14 @@ router.post('/msg91', async (req, res) => {
   }
 });
 
-// Send message via MSG91
+// Send message via MSG91 (session/reply message)
 async function sendMsg91Reply(to, message) {
   try {
     // Ensure number has country code
     const toNumber = to.startsWith('91') ? to : `91${to}`;
     
-    const response = await fetch('https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/', {
+    // Use single message API for session replies (within 24hr window)
+    const response = await fetch('https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -96,20 +97,36 @@ async function sendMsg91Reply(to, message) {
         integrated_number: process.env.MSG91_INTEGRATED_NUMBER,
         content_type: 'text',
         payload: {
-          messaging_product: 'whatsapp',
+          to: toNumber,
           type: 'text',
           text: {
             body: message
           }
-        },
-        recipients: [
-          { mobiles: toNumber }
-        ]
+        }
       })
     });
     
     const result = await response.text();
     console.log('MSG91 Reply sent:', response.status, result);
+    
+    // If single API fails, try alternative format
+    if (response.status !== 200) {
+      console.log('Trying alternative MSG91 format...');
+      const altResponse = await fetch(`https://api.msg91.com/api/v5/whatsapp/send-message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'authkey': process.env.MSG91_AUTH_KEY
+        },
+        body: JSON.stringify({
+          mobiles: toNumber,
+          integrated_number: process.env.MSG91_INTEGRATED_NUMBER,
+          message: message
+        })
+      });
+      const altResult = await altResponse.text();
+      console.log('MSG91 Alt Reply:', altResponse.status, altResult);
+    }
   } catch (err) {
     console.error('MSG91 Send error:', err);
   }

@@ -93,7 +93,7 @@ async function sendMsg91Reply(to, message) {
         'authkey': process.env.MSG91_AUTH_KEY
       },
       body: JSON.stringify({
-        integrated_number: process.env.MSG91_INTEGRATED_NUMBER,
+        integrated_number: process.env.MSG91_PHONE_NUMBER,
         content_type: 'text',
         payload: {
           messaging_product: 'whatsapp',

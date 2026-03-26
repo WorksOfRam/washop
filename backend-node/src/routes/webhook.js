@@ -120,30 +120,41 @@ async function sendMsg91Template(to, templateName, variables = []) {
   try {
     const toNumber = to.startsWith('91') ? to : `91${to}`;
     
+    // Build components object for variables
+    const components = {};
+    variables.forEach((value, index) => {
+      components[`body_${index + 1}`] = {
+        type: 'text',
+        value: String(value)
+      };
+    });
+    
     const payload = {
       integrated_number: process.env.MSG91_INTEGRATED_NUMBER,
       content_type: 'template',
       payload: {
-        to: toNumber,
+        messaging_product: 'whatsapp',
         type: 'template',
         template: {
           name: templateName,
           language: {
-            code: 'en'
+            code: 'en',
+            policy: 'deterministic'
           },
-          components: variables.length > 0 ? [
+          namespace: process.env.MSG91_NAMESPACE || '28ed141b_d4f2_46cd_ad30_41175d501866',
+          to_and_components: [
             {
-              type: 'body',
-              parameters: variables.map(v => ({ type: 'text', text: String(v) }))
+              to: [toNumber],
+              components: variables.length > 0 ? components : {}
             }
-          ] : []
+          ]
         }
       }
     };
 
     console.log('MSG91 Template Request:', JSON.stringify(payload));
 
-    const response = await fetch('https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/', {
+    const response = await fetch('https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

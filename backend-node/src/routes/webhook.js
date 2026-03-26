@@ -80,38 +80,140 @@ async function handleMessageWithTemplate(fullPhone, phone, text) {
   
   switch (command.type) {
     case 'GREETING':
-      // Use welcome_message template with shop name
+    case 'HELP':
       await sendMsg91Template(fullPhone, 'welcome_message', ['Rama Kirana Store']);
       return 'welcome_sent';
       
     case 'LIST_PRODUCTS':
-      // TODO: Use product_list template when approved
-      const products = await getProductsMessage();
-      console.log('Products (template pending):', products.substring(0, 100));
+      const productList = await getProductListForTemplate();
+      await sendMsg91Template(fullPhone, 'product_list', [productList]);
       return 'products_listed';
       
     case 'CHECKOUT':
-      // TODO: Use order_confirmation template when approved
-      const orderResponse = await checkoutMessage(phone);
-      console.log('Order (template pending):', orderResponse.substring(0, 100));
+      const orderResult = await createOrderForTemplate(phone);
+      if (orderResult.success) {
+        await sendMsg91Template(fullPhone, 'order_confirmation', [
+          orderResult.orderId,
+          orderResult.total,
+          orderResult.status
+        ]);
+      } else {
+        await sendMsg91Template(fullPhone, 'welcome_message', ['Rama Kirana Store']);
+      }
       return 'order_placed';
       
     case 'ADD_TO_CART':
-      await addToCartMessage(phone, command.productId, command.quantity, command.unit, command.displayQty);
+      const addResult = await addToCartMessage(phone, command.productId, command.quantity, command.unit, command.displayQty);
+      // After adding, show cart summary
+      const cartAfterAdd = await getCartForTemplate(phone);
+      if (cartAfterAdd.items) {
+        await sendMsg91Template(fullPhone, 'cart_summary', [cartAfterAdd.items, cartAfterAdd.total]);
+      }
       return 'added_to_cart';
       
     case 'VIEW_CART':
-      await getCartMessage(phone);
+      const cart = await getCartForTemplate(phone);
+      if (cart.items) {
+        await sendMsg91Template(fullPhone, 'cart_summary', [cart.items, cart.total]);
+      } else {
+        await sendMsg91Template(fullPhone, 'welcome_message', ['Rama Kirana Store']);
+      }
       return 'cart_viewed';
       
     case 'CLEAR_CART':
       await clearCartMessage(phone);
+      await sendMsg91Template(fullPhone, 'welcome_message', ['Rama Kirana Store']);
       return 'cart_cleared';
       
     default:
-      // For unknown commands, send welcome
       await sendMsg91Template(fullPhone, 'welcome_message', ['Rama Kirana Store']);
       return 'welcome_sent';
+  }
+}
+
+// Get product list formatted for template (max ~500 chars for WhatsApp)
+async function getProductListForTemplate() {
+  const products = await query(
+    'SELECT name, price, unit FROM products WHERE shop_id = $1 AND is_available = true ORDER BY display_order, name LIMIT 10',
+    [DEFAULT_SHOP_ID]
+  );
+  
+  const list = products.rows.map((p, i) => 
+    `${i + 1}. ${p.name} - ₹${p.price}/${p.unit}`
+  ).join('\n');
+  
+  return list || 'No products available';
+}
+
+// Get cart formatted for template
+async function getCartForTemplate(phone) {
+  const result = await query(
+    `SELECT ci.quantity, p.name, p.price, p.unit, (ci.quantity * p.price) as total
+     FROM cart_items ci JOIN products p ON ci.product_id = p.id
+     WHERE ci.user_phone = $1 AND ci.shop_id = $2`,
+    [phone, DEFAULT_SHOP_ID]
+  );
+  
+  if (result.rows.length === 0) {
+    return { items: null, total: '0' };
+  }
+  
+  const items = result.rows.map((item, i) => {
+    const qty = parseFloat(item.quantity);
+    const qtyDisplay = qty < 1 ? `${(qty * 1000).toFixed(0)}g` : `${qty}`;
+    return `${item.name} x${qtyDisplay} = ₹${parseFloat(item.total).toFixed(0)}`;
+  }).join('\n');
+  
+  const total = result.rows.reduce((sum, item) => sum + parseFloat(item.total), 0);
+  
+  return { items, total: `₹${total.toFixed(0)}` };
+}
+
+// Create order and return details for template
+async function createOrderForTemplate(phone) {
+  try {
+    const cartResult = await query(
+      `SELECT ci.quantity, ci.product_id, p.name, p.price, (ci.quantity * p.price) as total
+       FROM cart_items ci JOIN products p ON ci.product_id = p.id
+       WHERE ci.user_phone = $1 AND ci.shop_id = $2`,
+      [phone, DEFAULT_SHOP_ID]
+    );
+
+    if (cartResult.rows.length === 0) {
+      return { success: false };
+    }
+
+    const total = cartResult.rows.reduce((sum, item) => sum + parseFloat(item.total), 0);
+    const orderId = 'ORD_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+
+    await query(
+      `INSERT INTO orders (id, shop_id, customer_phone, subtotal, total, status, payment_status)
+       VALUES ($1, $2, $3, $4, $5, 'PENDING', 'UNPAID')`,
+      [orderId, DEFAULT_SHOP_ID, phone, total, total]
+    );
+
+    for (const item of cartResult.rows) {
+      await query(
+        `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, total_price)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [orderId, item.product_id, item.name, item.quantity, item.price, item.total]
+      );
+    }
+
+    await query(
+      'DELETE FROM cart_items WHERE user_phone = $1 AND shop_id = $2',
+      [phone, DEFAULT_SHOP_ID]
+    );
+
+    return {
+      success: true,
+      orderId: orderId,
+      total: `₹${total.toFixed(0)}`,
+      status: 'PENDING'
+    };
+  } catch (err) {
+    console.error('Order creation error:', err);
+    return { success: false };
   }
 }
 

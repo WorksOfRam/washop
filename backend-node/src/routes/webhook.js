@@ -63,14 +63,8 @@ router.post('/msg91', async (req, res) => {
     if (customerNumber && message) {
       // Remove country code if present (91XXXXXXXXXX -> XXXXXXXXXX)
       const phone = customerNumber.replace(/^91/, '');
-      const botResponse = await handleMessage(phone, message);
-      
-      // Send reply via MSG91
-      if (process.env.MSG91_AUTH_KEY) {
-        await sendMsg91Reply(customerNumber, botResponse);
-      } else {
-        console.log('MSG91 Reply (no auth key):', botResponse);
-      }
+      const result = await handleMessageWithTemplate(customerNumber, phone, message);
+      console.log('Message handled:', result);
     }
     
     res.status(200).json({ success: true });
@@ -80,56 +74,101 @@ router.post('/msg91', async (req, res) => {
   }
 });
 
-// Send message via MSG91 (session/reply message)
-async function sendMsg91Reply(to, message) {
+// Handle message and send appropriate template
+async function handleMessageWithTemplate(fullPhone, phone, text) {
+  const command = parseCommand(text);
+  
+  switch (command.type) {
+    case 'GREETING':
+      // Use welcome_message template with shop name
+      await sendMsg91Template(fullPhone, 'welcome_message', ['Rama Kirana Store']);
+      return 'welcome_sent';
+      
+    case 'LIST_PRODUCTS':
+      // TODO: Use product_list template when approved
+      const products = await getProductsMessage();
+      console.log('Products (template pending):', products.substring(0, 100));
+      return 'products_listed';
+      
+    case 'CHECKOUT':
+      // TODO: Use order_confirmation template when approved
+      const orderResponse = await checkoutMessage(phone);
+      console.log('Order (template pending):', orderResponse.substring(0, 100));
+      return 'order_placed';
+      
+    case 'ADD_TO_CART':
+      await addToCartMessage(phone, command.productId, command.quantity, command.unit, command.displayQty);
+      return 'added_to_cart';
+      
+    case 'VIEW_CART':
+      await getCartMessage(phone);
+      return 'cart_viewed';
+      
+    case 'CLEAR_CART':
+      await clearCartMessage(phone);
+      return 'cart_cleared';
+      
+    default:
+      // For unknown commands, send welcome
+      await sendMsg91Template(fullPhone, 'welcome_message', ['Rama Kirana Store']);
+      return 'welcome_sent';
+  }
+}
+
+// Send template message via MSG91
+async function sendMsg91Template(to, templateName, variables = []) {
   try {
-    // Ensure number has country code
     const toNumber = to.startsWith('91') ? to : `91${to}`;
     
-    // Use single message API for session replies (within 24hr window)
+    const payload = {
+      integrated_number: process.env.MSG91_INTEGRATED_NUMBER,
+      content_type: 'template',
+      payload: {
+        to: toNumber,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: {
+            code: 'en'
+          },
+          components: variables.length > 0 ? [
+            {
+              type: 'body',
+              parameters: variables.map(v => ({ type: 'text', text: String(v) }))
+            }
+          ] : []
+        }
+      }
+    };
+
+    console.log('MSG91 Template Request:', JSON.stringify(payload));
+
     const response = await fetch('https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'authkey': process.env.MSG91_AUTH_KEY
       },
-      body: JSON.stringify({
-        integrated_number: process.env.MSG91_INTEGRATED_NUMBER,
-        content_type: 'text',
-        payload: {
-          to: toNumber,
-          type: 'text',
-          text: {
-            body: message
-          }
-        }
-      })
+      body: JSON.stringify(payload)
     });
     
     const result = await response.text();
-    console.log('MSG91 Reply sent:', response.status, result);
-    
-    // If single API fails, try alternative format
-    if (response.status !== 200) {
-      console.log('Trying alternative MSG91 format...');
-      const altResponse = await fetch(`https://api.msg91.com/api/v5/whatsapp/send-message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'authkey': process.env.MSG91_AUTH_KEY
-        },
-        body: JSON.stringify({
-          mobiles: toNumber,
-          integrated_number: process.env.MSG91_INTEGRATED_NUMBER,
-          message: message
-        })
-      });
-      const altResult = await altResponse.text();
-      console.log('MSG91 Alt Reply:', altResponse.status, altResult);
-    }
+    console.log('MSG91 Template sent:', response.status, result);
+    return response.status === 200;
   } catch (err) {
-    console.error('MSG91 Send error:', err);
+    console.error('MSG91 Template error:', err);
+    return false;
   }
+}
+
+// Send message via MSG91 (uses template or falls back to logging)
+async function sendMsg91Reply(to, message, templateName = null, variables = []) {
+  if (templateName) {
+    return await sendMsg91Template(to, templateName, variables);
+  }
+  // For non-template messages, just log (templates required by MSG91)
+  console.log('MSG91 Reply (no template):', to, message.substring(0, 50) + '...');
+  return false;
 }
 
 async function handleMessage(from, text) {

@@ -57,13 +57,14 @@ router.post('/msg91', async (req, res) => {
   try {
     console.log('MSG91 Webhook:', JSON.stringify(req.body));
     
-    // MSG91 payload format: { customerNumber, message, messageId, timestamp }
-    const { customerNumber, message } = req.body;
+    // MSG91 actual payload: { customerNumber, text, contentType, ... }
+    const { customerNumber, text, contentType } = req.body;
     
-    if (customerNumber && message) {
+    // Only handle text messages
+    if (customerNumber && text && contentType === 'text') {
       // Remove country code if present (91XXXXXXXXXX -> XXXXXXXXXX)
       const phone = customerNumber.replace(/^91/, '');
-      const result = await handleMessageWithTemplate(customerNumber, phone, message);
+      const result = await handleMessageWithTemplate(customerNumber, phone, text);
       console.log('Message handled:', result);
     }
     

@@ -132,21 +132,22 @@ async function handleMessageWithTemplate(fullPhone, phone, text) {
   }
 }
 
-// Get product list formatted for template (max ~500 chars for WhatsApp)
+// Get product list formatted for template (no newlines - MSG91 limitation)
 async function getProductListForTemplate() {
   const products = await query(
     'SELECT name, price, unit FROM products WHERE shop_id = $1 AND is_available = true ORDER BY display_order, name LIMIT 10',
     [DEFAULT_SHOP_ID]
   );
   
+  // Use " | " separator instead of newlines (MSG91 doesn't support \n)
   const list = products.rows.map((p, i) => 
-    `${i + 1}. ${p.name} - ₹${p.price}/${p.unit}`
-  ).join('\n');
+    `${i + 1}.${p.name}-₹${p.price}`
+  ).join(' | ');
   
   return list || 'No products available';
 }
 
-// Get cart formatted for template
+// Get cart formatted for template (no newlines - MSG91 limitation)
 async function getCartForTemplate(phone) {
   const result = await query(
     `SELECT ci.quantity, p.name, p.price, p.unit, (ci.quantity * p.price) as total
@@ -159,11 +160,12 @@ async function getCartForTemplate(phone) {
     return { items: null, total: '0' };
   }
   
+  // Use " | " separator instead of newlines
   const items = result.rows.map((item, i) => {
     const qty = parseFloat(item.quantity);
     const qtyDisplay = qty < 1 ? `${(qty * 1000).toFixed(0)}g` : `${qty}`;
-    return `${item.name} x${qtyDisplay} = ₹${parseFloat(item.total).toFixed(0)}`;
-  }).join('\n');
+    return `${item.name} x${qtyDisplay}=₹${parseFloat(item.total).toFixed(0)}`;
+  }).join(' | ');
   
   const total = result.rows.reduce((sum, item) => sum + parseFloat(item.total), 0);
   
